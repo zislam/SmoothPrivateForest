@@ -1,5 +1,5 @@
-# SmoothPrivateForest
-Implementation of Smooth Private Forest, a differentially private decision forest designed to minimize the number of queries required and the sensitivity of those queries. Originally published in: * <br>
+# Smooth Private Forest
+Implementation of Smooth Private Forest, a differentially private decision forest designed to minimize the number of queries required and the sensitivity of those queries. Originally published in: <br>
 
 _Fletcher, S., & Islam, M. Z. (2017). Differentially private random decision forests using smooth sensitivity. Expert Systems with Applications, 78, 16-31._
 
