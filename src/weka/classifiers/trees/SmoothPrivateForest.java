@@ -544,7 +544,12 @@ public class SmoothPrivateForest extends AbstractClassifier
     @Override
     public String toString() {
 
-        DecimalFormat df = new DecimalFormat("#0.00");
+        //DecimalFormat df = new DecimalFormat("#0.00");
+        String formatter = "#.";
+        for(int i = 0; i < this.m_numDecimalPlaces; i++) {
+            formatter += "#";
+        }
+        DecimalFormat df = new DecimalFormat(formatter);
 
         if (m_ensemble == null) {
             return "Forest not built!";
@@ -578,7 +583,8 @@ public class SmoothPrivateForest extends AbstractClassifier
                 .append(m_comparisonClassifierTime)
                 .append(" ms with a classification accuracy of ")
                 .append(df.format(m_comparisonClassificationAccuracy))
-                .append("% on the whole training dataset.\n Its predictions were made in ")
+                .append("% on the whole training dataset.\nThis comparison classifier's"
+                        + " predictions were made in ")
                 .append(m_comparisonPredictionTime)
                 .append(" ms.");
 
@@ -1187,7 +1193,7 @@ public class SmoothPrivateForest extends AbstractClassifier
                         }
 
                         sb.append("} Sensitivity: ")
-                                .append(this.sensitivity);
+                                .append(df.format(this.sensitivity));
                     }
 
                 }
@@ -1523,7 +1529,7 @@ public class SmoothPrivateForest extends AbstractClassifier
      * @param argv should contain the following arguments: -t training file [-T
      * test file] [-c class index]
      */
-    public static void main(String[] argv) {
+    public static void main(String[] argv) {       
         runClassifier(new SmoothPrivateForest(), argv);
     }
 
