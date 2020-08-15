@@ -3,6 +3,27 @@ Implementation of Smooth Private Forest, a differentially private decision fores
 
 _Fletcher, S., & Islam, M. Z. (2017). Differentially private random decision forests using smooth sensitivity. Expert Systems with Applications, 78, 16-31._
 
+## BibTeX
+```
+@article{fletcher2017differentially,
+  title={Differentially private random decision forests using smooth sensitivity},
+  author={Fletcher, Sam and Islam, Md Zahidul},
+  journal={Expert Systems with Applications},
+  volume={78},
+  pages={16--31},
+  year={2017},
+  publisher={Elsevier}
+}
+```
+
+## Installation
+
+Either download SmoothPrivateForest from the Weka package manager, or download the latest release from the "Releases" section on the sidebar of Github.
+
+## Compilation / Development
+
+Set up a project in your IDE of choice, including weka.jar as a compile-time library.
+
 ## Options
 
 `-N <number of trees in forest>`
