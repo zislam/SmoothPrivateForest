@@ -71,6 +71,13 @@ import weka.filters.unsupervised.instance.RemoveRange;
  * </pre>
  *
  * <pre>
+ * -T &lt;tree depth&gt;
+ *  Tree depth option. If &lt;= 0 will be equal to the tree depth
+ *  calculation from the paper
+ *  (default -1)
+ * </pre>
+ * 
+ * <pre>
  * -E &lt;epsilon&gt;
  *  The privacy budget (epsilon) for the exponential mechanism.
  *  (default 1.0)
@@ -122,7 +129,7 @@ public class SmoothPrivateForest extends AbstractClassifier
      * Privacy budget for differential privacy (episilon in paper)
      */
     protected float m_privacyBudget = 1.0f;
-
+    
     /**
      * Whether or not to display flipped majorities, sensitivity information and
      * true distributions in leaves. Set to False for outputting and sharing
@@ -156,7 +163,13 @@ public class SmoothPrivateForest extends AbstractClassifier
     private Instances m_ds;
 
     /**
-     * Stores tree depth calculated as per original paper
+     * Tree depth. If <= 0, will use the paper's balls-in-bins probablity 
+     * process to automatically select tree depth.
+     */
+    protected int m_treeDepthOption = -1;
+    
+    /**
+     * Calculated or option-specified tree depth.
      */
     private int m_treeDepth = -1;
 
@@ -186,6 +199,10 @@ public class SmoothPrivateForest extends AbstractClassifier
     private long m_SPFTime;
     
     private boolean m_untrained = true;
+    
+    private String errorMessage = "";
+    
+    private int m_numberOfNumericalAttributes = -1;
 
     /**
      * Default classifier to setup SysFor.
@@ -317,7 +334,15 @@ public class SmoothPrivateForest extends AbstractClassifier
         ds.deleteWithMissingClass();
 
         //if this is a dataset with only the class attribute
-        if (ds.numAttributes() == 1) {
+        if (ds.numAttributes() == 1 || this.m_forestSize > ds.numInstances()) {
+            
+            if(ds.numAttributes() == 1) {
+                errorMessage += "This is a dataset with only the class value and cannot be used.\n";
+            }
+            if(this.m_forestSize > ds.numInstances()) {
+                errorMessage += "The forest size has been set higher than the number of instances in the dataset so the forest cannot be build.\n";
+            }
+            
             ZeroR zr = new ZeroR();
             zr.buildClassifier(ds);
             m_ensemble = new Classifier[1];
@@ -348,7 +373,13 @@ public class SmoothPrivateForest extends AbstractClassifier
         //start timing the SPF and start building it.
         long startTimeSPF = System.currentTimeMillis();
         m_ensemble = new Classifier[m_forestSize];
-        m_treeDepth = calculateTreeDepth(m_ds);
+        
+        if(m_treeDepthOption <= 0) {
+            m_treeDepth = calculateTreeDepth(m_ds);
+        } //otherwise we will use the user selected value
+        else {
+            m_treeDepth = m_treeDepthOption;
+        }
 
         //generate ur-domains
         m_urDomains = new HashMap<>();
@@ -433,6 +464,7 @@ public class SmoothPrivateForest extends AbstractClassifier
                 m++;
             }
         }
+        m_numberOfNumericalAttributes = m;
 
         if (m == 0) {
             retValue = (ds.numAttributes() - 1) / 2; //half the number of categorical atts
@@ -554,6 +586,10 @@ public class SmoothPrivateForest extends AbstractClassifier
         if (m_ensemble == null) {
             return "Forest not built!";
         }
+        
+        if(!"".equals(errorMessage)) {
+            return errorMessage;
+        }
 
         StringBuilder sb = new StringBuilder();
 
@@ -564,6 +600,13 @@ public class SmoothPrivateForest extends AbstractClassifier
                     .append("\n\n");
 
         }
+        
+        //Calculate the average sensitivity across all the leaves of all the trees
+        double averageSensitivityAcrossAllTrees = 0;
+        for (int t = 0; t < m_forestSize; t++) {
+            averageSensitivityAcrossAllTrees += ((SmoothPrivateTree)m_ensemble[t]).averageSensitivity;
+        }
+        averageSensitivityAcrossAllTrees /= m_forestSize;
 
         if (m_numDisplayTrees < m_forestSize) {
             int tmp = m_forestSize - m_numDisplayTrees;
@@ -575,7 +618,26 @@ public class SmoothPrivateForest extends AbstractClassifier
                 .append(m_SPFTime).append(" ms.")
                 .append("\n").append("With privacy budget: ")
                 .append(m_privacyBudget)
+                .append("\n")
+                .append("And an average sensitivity across all leaves of: ")
+                .append(averageSensitivityAcrossAllTrees)
                 .append("\n");
+        
+        if(m_treeDepthOption <= 0) {
+            //TODO
+            sb.append("Paper calculated tree depth via ")
+              .append("d = argmin E[X|d] (d:X<")
+              .append(m_numberOfNumericalAttributes)
+              .append("/2), E[X|d] = ")
+              .append(m_numberOfNumericalAttributes)
+              .append("* (")
+              .append(m_numberOfNumericalAttributes)
+              .append(" - 1 /").append(m_numberOfNumericalAttributes)
+              .append(" )^d")
+              .append(" gave the result ")
+              .append(m_treeDepth)
+              .append("\n");
+        }
 
         sb.append("Accuracy information will appear below. For comparison, the selected ")
                 .append(m_comparisonClassifier.getClass().getName())
@@ -597,6 +659,11 @@ public class SmoothPrivateForest extends AbstractClassifier
      */
     protected class SmoothPrivateTree extends AbstractClassifier implements Serializable {
 
+        /**
+         * The average sensitivity in the leaves.
+         */
+        protected double averageSensitivity = 0;
+        
         /**
          * The root node of the tree
          */
@@ -765,6 +832,7 @@ public class SmoothPrivateForest extends AbstractClassifier
 
             //set all noisy majorities
             numFlippedMajorities = this.setAllNoisyMajorities(epsilon, root);
+            averageSensitivity /= numLeaves;
 
         }
 
@@ -881,7 +949,9 @@ public class SmoothPrivateForest extends AbstractClassifier
 
             //do the noisy majority calculation if its a leaf, otherwise filter down to the leaves
             if (node.children == null || node.splittingAttribute == -1 || node.children.isEmpty()) {
-                return node.setNoisyMajority(epsilon);
+                double[] returnedArray = node.setNoisyMajority(epsilon);
+                averageSensitivity += returnedArray[1];
+                return (int)returnedArray[0];
             }
 
             int sum = 0;
@@ -1039,10 +1109,12 @@ public class SmoothPrivateForest extends AbstractClassifier
         /**
          * Use exponential mechanism to estimate class
          * @param epsilon - privacy budget
-         * @return estimated class 
+         * @return flipped majorities and sensitivity
          */
-        public int setNoisyMajority(double epsilon) {
+        public double[] setNoisyMajority(double epsilon) {
 
+            double[] returnArray = new double[2];
+            
             //only run this once per leaf
             if (this.noisyMajority == Integer.MIN_VALUE && this.children == null) {
 
@@ -1059,7 +1131,6 @@ public class SmoothPrivateForest extends AbstractClassifier
                     if (classCounts[i] > secondCC && classCounts[i] < maxCC) {
                         secondCC = classCounts[i];
                     }
-                    //TODO Check this
                 }
 
                 //assign noisy majority
@@ -1069,27 +1140,30 @@ public class SmoothPrivateForest extends AbstractClassifier
 
                         this.empty = true;
                         this.noisyMajority = m_random.nextInt(classCounts.length);
-                        return 0; //we don't want to count purely random flips
+                        return returnArray;
 
                     } else {
 
                         int countDifference = maxCC - secondCC; //j in paper
                         this.sensitivity = Math.exp(-1.0 * countDifference * epsilon);
+                        returnArray[1] = this.sensitivity;
                         this.sensOfSens = 1.0;
                         this.noisySensitivity = 1.0;
 
                         this.noisyMajority = this.expoMech(epsilon, this.sensitivity, this.classCounts);
                         if (this.noisyMajority != Utils.maxIndex(classCounts)) {
-                            return 1; //we're summing flipped majorities
+                            returnArray[0] = 1;
+                            return returnArray;
                         } else {
-                            return 0; //this means the exponential mechanism got it right
+                            returnArray[0] = 0; //this means the exponential mechanism got it right
+                            return returnArray;
                         }
                     }
 
                 }
             } //end the "run once" if statement
 
-            return 0;
+            return returnArray;
 
         }
 
@@ -1193,7 +1267,8 @@ public class SmoothPrivateForest extends AbstractClassifier
                         }
 
                         sb.append("} Sensitivity: ")
-                                .append(df.format(this.sensitivity));
+                                //.append(df.format(this.sensitivity));
+                                .append(String.format("%."+getNumDecimalPlaces()+"e", this.sensitivity));
                     }
 
                 }
@@ -1284,6 +1359,30 @@ public class SmoothPrivateForest extends AbstractClassifier
      */
     public String numDisplayTreesTipText() {
         return "Amount of decision trees to display in the output.";
+    }
+    
+    /**
+     * Get number of trees to display
+     * @return number of trees to display
+     */
+    public int getTreeDepthOption() {
+        return m_treeDepthOption;
+    }
+
+    /**
+     * Set the tree depth (<= 0 uses paper's calculation)
+     * @param m_treeDepth - the tree depth (<= 0 uses paper's calculation)
+     */
+    public void setTreeDepthOption(int m_treeDepthOption) {
+        this.m_treeDepthOption = m_treeDepthOption;
+    }
+
+    /**
+     * Weka tooltip
+     * @return Weka tooltip
+     */
+    public String treeDepthOptionTipText() {
+        return "The tree depth (<= 0 uses paper's calculation).";
     }
 
     /**
@@ -1397,6 +1496,13 @@ public class SmoothPrivateForest extends AbstractClassifier
      *  Number of trees to display in the output.
      *  (default 3)
      * </pre>
+     * 
+     * <pre>
+     * -T &lt;tree depth&gt;
+     *  Tree depth option. If &lt;= 0 will be equal to the tree depth
+     *  calculation from the paper
+     *  (default -1)
+     * </pre>
      *
      * <pre>
      * -E &lt;epsilon&gt;
@@ -1435,6 +1541,13 @@ public class SmoothPrivateForest extends AbstractClassifier
             setForestSize(Integer.parseInt(sNumberTrees));
         } else {
             setForestSize(10);
+        }
+        
+        String sTreeDepthOption = Utils.getOption('T', options);
+        if (sNumberTrees.length() != 0) {
+            setTreeDepthOption(Integer.parseInt(sTreeDepthOption));
+        } else {
+            setTreeDepthOption(-1);
         }
 
         String sPrivacyBudget = Utils.getOption('E', options);
@@ -1500,6 +1613,11 @@ public class SmoothPrivateForest extends AbstractClassifier
 
         result.add("-D");
         result.add("" + getNumDisplayTrees());
+        
+        if(m_treeDepthOption <= 0) {
+            result.add("-T");
+            result.add("" + getTreeDepthOption());
+        }
 
         result.add("-E");
         result.add("" + getPrivacyBudget());
