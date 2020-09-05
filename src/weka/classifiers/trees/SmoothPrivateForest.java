@@ -71,7 +71,7 @@ import weka.filters.unsupervised.instance.RemoveRange;
  * </pre>
  *
  * <pre>
- * -T &lt;tree depth&gt;
+ * -R &lt;tree depth&gt;
  *  Tree depth option. If &lt;= 0 will be equal to the tree depth
  *  calculation from the paper
  *  (default -1)
@@ -105,7 +105,7 @@ import weka.filters.unsupervised.instance.RemoveRange;
  *
  *
  * @author Michael Furner (mfurner@csu.edu.au)
- * @version $Revision: 1.0$
+ * @version $Revision: 1.2.1$
  */
 public class SmoothPrivateForest extends AbstractClassifier
         implements OptionHandler, Randomizable {
@@ -295,6 +295,8 @@ public class SmoothPrivateForest extends AbstractClassifier
                 + "\t(default 10)", "N", 1, "-N"));
         newVector.addElement(new Option("\tNumber of trees to display.\n"
                 + "\t(default 3)", "D", 1, "-D"));
+        newVector.addElement(new Option("\tThe tree depth (<=0 uses calculation from paper).\n"
+                + "\t(default -1)", "R", 1, "-R"));
         newVector.addElement(new Option("\tPrivacy budget for differential "
                 + "privacy (episilon in paper)\n"
                 + "\t(default 1.0)", "E", 1, "-E"));
@@ -334,13 +336,16 @@ public class SmoothPrivateForest extends AbstractClassifier
         ds.deleteWithMissingClass();
 
         //if this is a dataset with only the class attribute
-        if (ds.numAttributes() == 1 || this.m_forestSize > ds.numInstances()) {
+        if (ds.numAttributes() == 1 || this.m_forestSize > ds.numInstances() || this.m_numDisplayTrees > this.m_forestSize) {
             
             if(ds.numAttributes() == 1) {
                 errorMessage += "This is a dataset with only the class value and cannot be used.\n";
             }
             if(this.m_forestSize > ds.numInstances()) {
                 errorMessage += "The forest size has been set higher than the number of instances in the dataset so the forest cannot be build.\n";
+            }
+            if(this.m_numDisplayTrees > this.m_forestSize) {
+                errorMessage += "Number of display trees can not be larger than the number of trees in the forest.\n";
             }
             
             ZeroR zr = new ZeroR();
@@ -1498,7 +1503,7 @@ public class SmoothPrivateForest extends AbstractClassifier
      * </pre>
      * 
      * <pre>
-     * -T &lt;tree depth&gt;
+     * -R &lt;tree depth&gt;
      *  Tree depth option. If &lt;= 0 will be equal to the tree depth
      *  calculation from the paper
      *  (default -1)
@@ -1543,7 +1548,7 @@ public class SmoothPrivateForest extends AbstractClassifier
             setForestSize(10);
         }
         
-        String sTreeDepthOption = Utils.getOption('T', options);
+        String sTreeDepthOption = Utils.getOption('R', options);
         if (sNumberTrees.length() != 0) {
             setTreeDepthOption(Integer.parseInt(sTreeDepthOption));
         } else {
@@ -1614,10 +1619,8 @@ public class SmoothPrivateForest extends AbstractClassifier
         result.add("-D");
         result.add("" + getNumDisplayTrees());
         
-        if(m_treeDepthOption <= 0) {
-            result.add("-T");
-            result.add("" + getTreeDepthOption());
-        }
+        result.add("-R");
+        result.add("" + getTreeDepthOption());
 
         result.add("-E");
         result.add("" + getPrivacyBudget());
